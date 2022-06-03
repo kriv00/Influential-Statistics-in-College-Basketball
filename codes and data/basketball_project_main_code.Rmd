@@ -1,0 +1,389 @@
+---
+title: "Basketball Project"
+author: "Jamie Doyle and Kelly Rivera"
+date: "4/30/2022"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(tidyr)
+library(lubridate)
+library(rvest)
+library(readxl)
+library(ggpubr)
+library(olsrr)
+library(corrplot)
+library(nortest)
+library(lmtest)
+library(car)
+library(ISLR)
+library(pls)
+library(glmnet)
+library(ggplot2)
+```
+
+# Importing Basketball Data
+Data is from: https://www.kaggle.com/datasets/andrewsundberg/college-basketball-dataset
+Years 2013 - 2019 (Division I college basketball seasons)
+This dataset contains 25 variables
+Variables used for identifying: TEAM, and YEAR
+The CSV file being read in had variable names changed when they started with a number. Example: 2P_O was renamed to P2_O
+
+```{r}
+cbb <- read_csv("cbb.csv")
+#head(cbb)
+```
+
+# Initial Variable Selection
+Note: MASS and dplyr package cause 'select issues'
+```{r}
+cols <- cbb %>%
+  dplyr::select(W, ADJOE, ADJDE, P2_D, P2_O, EFG_D, EFG_O, BARTHAG, WAB)
+
+col.cor <- cor(cols)
+corrplot(col.cor, tl.pos = 'd', cl.pos = 'n', method = 'square', addCoef.col = 'black', type = 'lower')
+```
+
+
+# Model Formulation (1): BARTHAG
+```{r}
+reg.out <- lm(W~ADJOE+ADJDE+BARTHAG+EFG_O+EFG_D+P2_O+P2_D,data=cbb)
+summary(reg.out)
+```
+
+Barthag variable is clearly not significant to the model
+
+
+# Model Formulation (2): Check for Transformations
+```{r}
+par(mfrow=c(3,3))
+hist(cbb$ADJOE, xlab="ADJOE", main=NULL)
+hist(cbb$ADJDE, xlab="ADJDE", main=NULL)
+hist(cbb$P2_O, xlab="P2_O", main=NULL)
+hist(cbb$P2_D, xlab="P2_D", main=NULL)
+hist(cbb$EFG_O, xlab="EFG_O", main=NULL)
+hist(cbb$EFG_D, xlab="EFG_D", main=NULL)
+
+#hist(cbb$BARTHAG, xlab="BARTHAG", main=NULL)
+```
+
+# Model Formulation (3): Check for Outliers Graphically
+```{r}
+reg1 <- lm(W~ADJOE, data = cbb) 
+reg2 <- lm(W~ADJDE, data = cbb) 
+reg3 <- lm(W~P2_O, data = cbb)
+reg4 <- lm(W~P2_D, data = cbb) 
+reg5 <- lm(W~EFG_O, data = cbb)
+reg6 <- lm(W~EFG_D, data = cbb)
+
+par(mfrow=c(3,3))
+
+#Add axis labels
+plot(reg1, which = 1) 
+plot(reg2, which = 1) 
+plot(reg3, which = 1) 
+plot(reg4, which = 1) 
+plot(reg5, which = 1) 
+plot(reg6, which = 1)
+```
+
+
+# Model Formulation (4): Multicollinearity with VIF 
+After narrowing down to these six predictors we needed to check the multicollinearity problem using the vif.
+When we included WAB in the model the WAB vif was greater then 10 and the other four predictors had vifs greater than 5. When BARTHAG was included in the model the vif for ADJDE=13.92, ADJOE=16.10, and BARTHAG=35.78 were greater than 10 and the other three predictors had vifs greater than 5. So our solution was to exclude both WAB and BARTHAG.
+
+```{r}
+# Regresses on all variables
+glm_BARTHAG <- lm(W ~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D+BARTHAG, data=cbb)
+finalGLM <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D, data=cbb) 
+noEFG_D <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O, data=cbb) 
+
+# VIFS comparitions                              # Computes VIF-value
+vif(glm_BARTHAG)
+vif(finalGLM)
+vif(noEFG_D)
+```
+
+
+# Variable Selection (1)
+```{r}
+ols_step_backward_p(finalGLM, prem = 0.05)
+```
+
+
+
+# Model Diagnostics (1):  Check Assumptions
+Linearity and Homogeneous Variance
+```{r}
+reg1 <- lm(W~ADJOE, data = cbb) 
+reg2 <- lm(W~ADJDE, data = cbb) 
+reg3 <- lm(W~P2_O, data = cbb)
+reg4 <- lm(W~P2_D, data = cbb) 
+reg5 <- lm(W~EFG_O, data = cbb)
+reg6 <- lm(W~EFG_D, data = cbb)
+
+par(mfrow=c(3,3))
+
+#Add axis labels
+plot(reg1, which = 1) 
+plot(reg2, which = 1) 
+plot(reg3, which = 1) 
+plot(reg4, which = 1) 
+plot(reg5, which = 1) 
+plot(reg6, which = 1)
+```
+
+
+# Model Diagnostics (2):  Check Assumptions
+```{r}
+reg10 <- lm(W~ADJOE, data = cbb) 
+reg11 <- lm(W~ADJDE, data = cbb) 
+reg12 <- lm(W~P2_O, data = cbb)
+reg13 <- lm(W~P2_D, data = cbb) 
+reg14 <- lm(W~EFG_O, data = cbb)
+reg15 <- lm(W~EFG_D, data = cbb) 
+
+par(mfrow=c(3,3))
+
+qqnorm(reg10$resid,ylab="Residuals",xlab= # Normal quantile plot
+  "ADJOE",cex.lab=1.6,cex.axis=
+  1.5,cex=1.5,main=" ",
+  cex.main=1.8,pch=16,mgp=c(2.7,1,0))
+qqnorm(reg11$resid,ylab="Residuals",xlab= # Normal quantile plot
+  "ADJDE",cex.lab=1.6,cex.axis=
+  1.5,cex=1.5,main=" ",
+  cex.main=1.8,pch=16,mgp=c(2.7,1,0))
+qqnorm(reg12$resid,ylab="Residuals",xlab= # Normal quantile plot
+  "P2_O",cex.lab=1.6,cex.axis=
+  1.5,cex=1.5,main=" ",
+  cex.main=1.8,pch=16,mgp=c(2.7,1,0))
+qqnorm(reg13$resid,ylab="Residuals",xlab= # Normal quantile plot
+  "P2_D",cex.lab=1.6,cex.axis=
+  1.5,cex=1.5,main=" ",
+  cex.main=1.8,pch=16,mgp=c(2.7,1,0))
+qqnorm(reg14$resid,ylab="Residuals",xlab= # Normal quantile plot
+  "EFG_O",cex.lab=1.6,cex.axis=
+  1.5,cex=1.5,main=" ",
+  cex.main=1.8,pch=16,mgp=c(2.7,1,0))
+qqnorm(reg14$resid,ylab="Residuals",xlab= # Normal quantile plot
+  "EFG_D",cex.lab=1.6,cex.axis=
+  1.5,cex=1.5,main=" ",
+  cex.main=1.8,pch=16,mgp=c(2.7,1,0))
+
+mtext("Normal Quantile Plots", side = 3, line = -1.5, outer = TRUE)
+
+reg <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D, data = cbb)  
+sf.test(reg$resid)            # Conducts Shapiro-Francia test
+
+```
+
+# Model Diagnostics (3): F-Test for Model Significance
+```{r}
+summary(finalGLM)
+```
+
+# Inferential Results (1): Residual Statistics
+```{r}
+reg <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D, data = cbb)  
+crit_value <- abs(qt(p=.025, df=2447, lower.tail=TRUE))
+crit_value
+
+reg <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D, data = cbb) 
+jack <- rstudent(reg)               # Computes studentized deleted residuals
+jacka <- data.frame(t(data.frame(as.list(abs(jack)))))
+jack2a <- jacka %>%
+  rename(COL1 = 1)
+jack_count <- jack2a %>% filter(COL1 > crit_value)
+count(jack_count)
+
+
+#leverages
+lev1 <- hatvalues(reg)
+lev_crit = (2*(7/2455))
+lev2 <- data.frame(t(data.frame(as.list(lev1))))
+lev3 <- lev2 %>%
+  rename(COL2 = 1)
+both1 <- cbind(jack2a, lev3)
+both2 <- both1 %>% filter(COL1 > crit_value, COL2 > lev_crit)
+count(both2)
+
+```
+
+# Inferential Results (2): Influential Statistics
+```{r}
+reg <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D, data = cbb)  
+
+#cook's d
+vec1 <- cooks.distance(reg)
+cookd <- data.frame(t(data.frame(as.list(vec1))))
+cookd1 <- cookd %>%
+  rename(COOKD = 1) 
+cookd2 <- cookd1 %>%
+  filter(COOKD > 1)
+count(cookd2)
+
+#dffits
+vec2 <- dffits(reg)
+dffit <- data.frame(t(data.frame(as.list(vec2))))
+df_crit = 2*sqrt(7/2455)
+df_crit
+
+dffit1 <- dffit %>%
+  rename(DFFit = 1) 
+dffit2 <- dffit1 %>%
+  filter(abs(DFFit) > df_crit)
+count(dffit2)
+
+#dfbetas
+vec3 <- dfbetas(reg) 
+beta_crit = (2/sqrt(2455))
+beta_crit
+dfbeta1 <- data.frame(vec3)
+
+dfbeta2_1 <- dfbeta1 %>%
+  filter(abs(X.Intercept.) > beta_crit)
+count(dfbeta2_1)
+
+dfbeta2_2 <- dfbeta1 %>%
+  filter(abs(ADJDE) > beta_crit)
+count(dfbeta2_2)
+
+dfbeta2_3 <- dfbeta1 %>%
+  filter(abs(ADJOE) > beta_crit)
+count(dfbeta2_3)
+
+dfbeta2_4 <- dfbeta1 %>%
+  filter(abs(P2_O) > beta_crit)
+count(dfbeta2_4)
+
+dfbeta2_5 <- dfbeta1 %>%
+  filter(abs(P2_D) > beta_crit)
+count(dfbeta2_5)
+
+dfbeta2_6 <- dfbeta1 %>%
+  filter(abs(EFG_O) > beta_crit)
+count(dfbeta2_6)
+
+dfbeta2_7 <- dfbeta1 %>%
+  filter(abs(EFG_D) > beta_crit)
+count(dfbeta2_7)
+
+#plot(reg)
+```
+
+
+# Inferential Results (3): Robust Regression
+Robust Regression vs. GLM
+```{r}
+fit.bisq<-rlm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D,data=cbb, psi=psi.bisquare)
+summary(fit.bisq)
+
+reg2.out <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D,data=cbb) 
+summary(reg2.out)
+```
+
+
+# Comparing Model Performance: GLM, Ridge, PCR
+GLM, PRESS - leave one out 
+```{r}
+pressGLM <- ols_press(finalGLM)                                  # getting press to calc the CV error to compare with 
+
+glmCV <- pressGLM/2455                      # getting the CV error, cv= PRESS/n,   n=sample size  
+```
+
+CV for Ridge and PCR
+```{r}
+attach(cbb)
+x<-cbind(ADJDE,ADJOE,P2_O,P2_D,EFG_O, EFG_D, BARTHAG)
+y<-W
+
+grid <- seq(0.001,.5,length = 100)
+
+# Ridge reg model
+ridge.mod=cv.glmnet(x,y,lambda = grid, nfold=length(y), alpha=0)
+
+lambda=ridge.mod$lambda.min                                         # min lambda value from model
+
+predict(ridge.mod,s=lambda, type="coefficients")
+
+# CV of Ridge
+ridgeCV <- min(ridge.mod$cvm)
+
+# PCR model
+pr.out = prcomp(x,scale=TRUE)
+pcreg<- lm(W~pr.out$x[,1:4]) 
+
+# ?????Confirm what variables to use - doesn't seem to help
+pcr.cv = pcr(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D+BARTHAG, data =cbb, scale= T, validation = "LOO")
+summary(pcr.cv)
+
+pr.var=pr.out$sdev^2
+pve= pr.var/sum(pr.var)
+
+# plot(pve, xlab = "Principal Comp", ylab="Prop of Varianve Explained", ylim=c(0,1), type="b")
+# plot(cumsum(pve), xlab = "Principal Comp", ylab="Cumulative Prop of Varianve Explained", ylim=c(0,1), type="b")
+
+# CV from PCR (worst)
+pcrCV <- (3.158)^2
+```
+
+We are going to note that although the pcr was supposed to minimize the multicollinearity problem it failed to do so, addtionally the pcr model with the lowest cv error was also the model that had the most components which is odd.
+
+## Comparing the CV errors of GLM, Ridge, and PCR models
+```{r}
+cvErrors <- cbind(glmCV, ridgeCV, pcrCV)
+cvErrors
+```
+
+
+# Check for multicollinearity with new (reduced) model
+```{r,  eval = FALSE}
+cbb_red2 <- select(cbb, c(W, ADJOE, ADJDE, P2_O, P2_D, EFG_O, EFG_D))
+pairs.panels(cbb_red2[,1:7])
+
+reg9 <- lm(W ~ ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D,data=cbb) # Regresses on all variables
+vif(reg9)                              # Computes VIF-values
+```
+
+
+# Not added in paper or presentation, but used during working on project:
+## BARTHAG violating assumptions
+```{r}
+cbb_test <- cbb %>% 
+  mutate(BARTHAG2 = sqrt(BARTHAG))
+
+plot(cbb_test$W,cbb$BARTHAG,pch=16,  # Plots mortality vs. wine
+  xlab="Power Rating (Chance of beating an average Division I team)", #   consumption with axis labels
+  cex.lab=1.6,cex.axis=1.5,cex=1.5,      #   and a title
+  ylab="Number of Games Won",
+  main="Power Rating VS. Number of Games Won",
+  cex.main=1.8,mgp=c(2.7,1,0))
+reg5 <- lm(W~BARTHAG2, data = cbb_test) 
+plot(reg5, which = 1) 
+```
+
+# Interaction Terms check
+```{r}
+ggplot(cbb) +
+  geom_point(aes(y=W, x=P2_O, color=EFG_O)) +
+  labs(title="Checking for interaction between 2P_O and EFG_O",
+       x= "2P_O")
+
+
+ggplot(cbb) +
+  geom_point(aes(y=W, x=P2_D, color=EFG_D)) +
+  labs(title="Checking for interaction between 2P_D and EFG_D",
+       x= "2P_D")
+```
+
+## Checking Interaction Significance
+
+```{r}
+interMod <- lm(W~ADJDE+ADJOE+P2_O+P2_D+EFG_O+EFG_D+P2_O*EFG_O+P2_D*EFG_D, data = cbb)
+
+summary(interMod)
+```
